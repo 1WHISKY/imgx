@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <!-- data goes here -->
+
+        <script>
+            if (typeof data === "undefined") {
+                const binary = atob(compressed)
+                const bytes = new Uint8Array(binary.length)
+
+                for (let i = 0; i < binary.length; i++) {
+                    bytes[i] = binary.charCodeAt(i)
+                }
+
+                const decompressed = pako.inflate(bytes)
+                const str = new TextDecoder().decode(decompressed)
+                var data = JSON.parse(str)
+            }
+        </script>
+
+        <style>
+            body {
+                background-color: #202020;
+                color: #dddddd;
+                font-family: Arial, Liberation Sans, sans-serif;;
+            }
+
+            .context-backdrop {
+                position: fixed;
+                inset: 0;
+                display: none;
+                justify-content: center;
+                align-items: center;
+                z-index: 999;
+            }
+
+            .context {
+                background: #202020;
+                border-radius: 2px;
+                box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+                position: absolute;
+            }
+
+            .context-backdrop.show {
+                display: flex;
+            }
+
+            .context-entry {
+                padding: 12px;
+                cursor: pointer;
+            }
+
+            .context-entry:hover {
+                background-color: #303030
+            }
+
+            .modal-backdrop {
+                position: fixed;
+                inset: 0;
+                background: rgba(0, 0, 0, 0.4);
+                display: none;
+                justify-content: center;
+                align-items: center;
+                z-index: 998;
+            }
+
+            .modal {
+                background: #202020;
+                padding: 1.5rem;
+                border-radius: 2px;
+                min-width: 400px;
+                box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+                position: relative;
+                max-width: 70%;
+                max-height: 70%;
+                overflow: auto;
+            }
+
+            .modal-header {
+                font-size: 1.2rem;
+                margin-bottom: 2rem;
+            }
+
+            .modal-close {
+                color: #dddddd;
+                position: absolute;
+                top: 0.5rem;
+                right: 0.5rem;
+                border: none;
+                background: transparent;
+                font-size: 1.2rem;
+                cursor: pointer;
+            }
+
+            .modal-backdrop.show {
+                display: flex;
+            }
+
+            /* Json highlighter */
+            .string { color: green; }
+            .number { color: darkorange; }
+            .boolean { color: blue; }
+            .null { color: magenta; }
+            .key { color: #d11313; }
+
+        </style>
+    </head>
+
+    <body>
+
+        <div id="modalBackdrop" class="modal-backdrop">
+            <div class="modal">
+                <button class="modal-close" id="closeModalBtn">&times;</button>
+                <div id="modalheader" class="modal-header"></div>
+                <div id="modalbody"></div>
+            </div>
+        </div>
+
+        <div id="contextBackdrop" class="context-backdrop">
+            <div id="contextbody" class="context"></div>
+        </div>
+
+        <a href="https://github.com/1whisky/imgx" target="_blank" style="font-size: 24pt; text-decoration: inherit; color: inherit; margin-left: 24px;">
+            imgx
+        </a>
+
+
+        <script>
+
+
+const modalBackdrop = document.getElementById('modalBackdrop')
+const modalHeader = document.getElementById('modalheader')
+const modalBody = document.getElementById('modalbody')
+
+function openModal() {
+    modalBackdrop.classList.add('show')
+}
+
+function closeModal() {
+    modalBackdrop.classList.remove('show')
+}
+
+function setModalHeaderText(str){
+    modalHeader.textContent = str
+}
+
+function setModalBody(el){
+    modalBody.innerHTML = ""
+    modalBody.appendChild(el)
+}
+
+modalBackdrop.addEventListener('click', function (e) {
+    if (e.target === modalBackdrop) {
+        closeModal()
+    }
+})
+
+document.getElementById('closeModalBtn').addEventListener('click', closeModal)
+
+
+
+const contextBackdrop = document.getElementById('contextBackdrop')
+const contextBody = document.getElementById('contextbody')
+
+function openContext(e) {
+    e.preventDefault()
+    e.stopPropagation()
+
+    document.body.style.overflow = "hidden"
+    contextBackdrop.classList.add('show')
+
+    var x = e.clientX
+    var y = e.clientY
+
+    if( y + contextBody.clientHeight > window.innerHeight ){
+        y = y - contextBody.clientHeight
+
+        if (y < 0 ){
+            contextBody.style.maxHeight = contextBody.clientHeight - y + "px"
+            y = 0
+        }
+    }
+
+    if( x + contextBody.clientWidth > window.innerWidth ){
+        //x = x - contextBody.clientWidth
+        x = window.innerWidth - contextBody.clientWidth
+    }
+
+    contextBody.style.left = x + "px"
+    contextBody.style.top = y + "px"
+
+}
+
+function closeContext() {
+    document.body.style.overflow = ""
+    contextBackdrop.classList.remove('show')
+}
+
+function setContextBody(el){
+    contextBody.innerHTML = ""
+    contextBody.appendChild(el)
+}
+
+contextBackdrop.addEventListener('click', function(e) {
+    closeContext()
+})
+
+contextBackdrop.addEventListener('contextmenu', function(e) {
+    e.preventDefault()
+    closeContext()
+})
+
+async function setClipboardText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (err) {
+    console.error("Failed to copy text:", err);
+  }
+}
+
+function jsonHighlight(json) {
+    if (typeof json != 'string') {
+         json = JSON.stringify(json, undefined, 2);
+    }
+    json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+        var cls = 'number';
+        if (/^"/.test(match)) {
+            if (/:$/.test(match)) {
+                cls = 'key';
+            } else {
+                cls = 'string';
+            }
+        } else if (/true|false/.test(match)) {
+            cls = 'boolean';
+        } else if (/null/.test(match)) {
+            cls = 'null';
+        }
+        return '<span class="' + cls + '">' + match + '</span>';
+    });
+}
+
+function addContextEntry(name, fun, ...args){
+    const el = document.createElement("div")
+    el.classList.add("context-entry")
+    el.textContent = name
+
+    el.onclick = function(e){
+        fun(args)
+    }
+
+    contextBody.appendChild(el)
+}
+
+function formatBytes(bytes) {
+    if (bytes == 0) return "0 B"
+
+    const units = ["B", "KB", "MB", "GB", "TB", "PB"]
+    const i = Math.floor(Math.log(bytes) / Math.log(1024))
+    const value = bytes / Math.pow(1024, i)
+
+    if (Number.isInteger(value)) {
+        return value + " " + units[i]
+    }
+
+    return parseFloat(value.toFixed(2)) + " " + units[i]
+}
+
+function getImageName(image){
+    for (let i in image.tags){
+        const name = image.tags[i]
+
+        if (name.search("@sha256:") == -1) {
+            return name
+        }
+    }
+
+    return image.tags[0]
+}
+
+function createToggle(mainElement, hiddenElement, onclick) {
+    const container = document.createElement("div")
+
+    const headerRow = document.createElement("div")
+    headerRow.style.display = "flex"
+    headerRow.style.alignItems = "center"
+    headerRow.style.width = "100%"
+
+    const arrow  = document.createElement("span")
+    arrow.innerHTML = "&#9654;"
+    arrow.style.display = "inline-block"
+    arrow.style.width = "1em"
+    arrow.style.textAlign = "center"
+    arrow.style.cursor = "pointer"
+    headerRow.appendChild(arrow)
+
+    mainElement.style.cursor = "pointer"
+    mainElement.style.flex = "1"
+    headerRow.appendChild(mainElement)
+
+    hiddenElement.style.display = "none"
+    hiddenElement.style.marginLeft = arrow.style.width
+
+    const toggle = () => {
+        const isHidden = hiddenElement.style.display === "none"
+        hiddenElement.style.display = isHidden ? "block" : "none"
+        arrow.innerHTML = isHidden ? "&#9660;" : "&#9654;"
+        if (onclick) onclick(!isHidden)
+    }
+
+    mainElement.addEventListener("click", toggle)
+    arrow.addEventListener("click", toggle)
+
+    container.appendChild(headerRow)
+    container.appendChild(hiddenElement)
+
+    return container
+}
+
+function createEntry(dat){
+    if (dat.symlink){
+        dat.size = 0
+        dat.text = dat.text + " -> " + dat.symlink
+    }
+
+    const container = document.createElement("div")
+
+    const headerRow = document.createElement("div")
+    headerRow.style.display = "flex"
+    headerRow.style.alignItems = "center"
+    headerRow.style.width = "100%"
+
+    if (dat.indent) {
+        const arrow  = document.createElement("span")
+        arrow.textContent = "&#9654;"
+        arrow.style.display = "inline-block"
+        arrow.style.width = "1em"
+        arrow.style.textAlign = "center"
+        arrow.style.cursor = "pointer"
+        arrow.style.visibility = "hidden"
+        headerRow.appendChild(arrow)
+    }
+
+    const mainElement = document.createElement("div")
+    mainElement.style.display = "flex"
+    mainElement.style.alignItems = "center"
+    mainElement.style.padding = "8px"
+    mainElement.style.gap = "8px"
+    mainElement.style.flex = "1"
+    mainElement.style.marginLeft = "8px"
+    mainElement.style.marginTop = "5px"
+    mainElement.style.background = "#303030"
+
+    let used = 0
+
+    if ((typeof dat.size != "undefined") && (typeof dat.maxsize != "undefined")){
+        used = (dat.size / dat.maxsize) * 100
+
+        if (isNaN(used)) {
+            used = 0
+        }
+
+        mainElement.style.background = `linear-gradient(to right, #404040 ${used}%, #303030 ${used}%)`
+    }
+
+    const sizeElement = document.createElement("div")
+    sizeElement.textContent = (typeof dat.size != "undefined" && dat.size != -1) ? formatBytes(dat.size) : ""
+    sizeElement.style.width = "90px"
+    sizeElement.style.textAlign = "right"
+    sizeElement.style.flexShrink = "0"
+    mainElement.appendChild(sizeElement)
+
+    const nameGroup = document.createElement("div")
+    nameGroup.style.display = "flex"
+    nameGroup.style.alignItems = "center"
+    nameGroup.style.gap = "6px"
+    nameGroup.style.flex = "1"   // this replaces nameElement's flex:1
+    mainElement.appendChild(nameGroup)
+
+    const nameElement = document.createElement("div")
+    nameElement.textContent = dat.text ?? "?"
+    nameElement.style.marginRight = "10px"
+    nameElement.style.textDecoration = dat.size == -1 ? "line-through" : null
+    nameElement.style.color = dat.symlink ? "#1d99f3" : (dat.size == -1 ? "#ed1515" : null)
+    nameGroup.appendChild(nameElement)
+
+
+    if (dat.sameimage) {
+        const baseImageElement = document.createElement("div")
+        baseImageElement.textContent = getImageName(dat.sameimage)
+        baseImageElement.style.backgroundColor = "#202020"
+        baseImageElement.style.padding = "7px"
+        baseImageElement.style.fontSize = "9pt"
+        baseImageElement.style.borderRadius = "12px"
+        baseImageElement.style.flexShrink = "0"
+        baseImageElement.onclick = function(e){
+            e.stopPropagation()
+            setModalHeaderText("Base image")
+
+            const contents = []
+
+            contents[contents.length] = document.createElement("div"); contents[contents.length - 1].textContent = "This image is used as a base:"
+            contents[contents.length] = document.createElement("br")
+
+            for (let image of dat.sameimage.tags){
+                contents[contents.length] = document.createElement("div"); contents[contents.length - 1].textContent = image
+            }
+
+            contents[contents.length] = document.createElement("br")
+            contents[contents.length] = document.createElement("div"); contents[contents.length - 1].textContent = "ID: " + dat.sameimage.id
+
+
+            const content = document.createElement("div")
+
+            for (let c of contents){
+                content.appendChild(c)
+            }
+
+            setModalBody(content)
+            openModal()
+        }
+        nameGroup.appendChild(baseImageElement)
+    }
+
+    if (dat.os){
+        const osElement = document.createElement("div")
+        osElement.textContent = dat.os ?? "?"
+        osElement.style.backgroundColor = "#202020"
+        osElement.style.padding = "7px"
+        osElement.style.fontSize = "9pt"
+        osElement.style.borderRadius = "12px"
+        osElement.style.flexShrink = "0"
+        osElement.onclick = function(e){
+            e.stopPropagation()
+            setModalHeaderText("/etc/os-release")
+
+            const content = document.createElement("pre")
+            content.textContent = dat.os_release
+            content.style.fontSize = "12pt"
+
+            setModalBody(content)
+            openModal()
+        }
+        nameGroup.appendChild(osElement)
+    }
+
+    if (data.layers[dat.diff]?.length > 1){
+        const usesElement = document.createElement("div")
+        usesElement.textContent = data.layers[dat.diff]?.length + " uses"
+        usesElement.style.backgroundColor = "#202020"
+        usesElement.style.padding = "7px"
+        usesElement.style.fontSize = "9pt"
+        usesElement.style.borderRadius = "12px"
+        usesElement.style.flexShrink = "0"
+        usesElement.onclick = function(e){
+            e.stopPropagation()
+            setModalHeaderText("Layer usage")
+
+            const contents = []
+
+            contents[contents.length] = document.createElement("div"); contents[contents.length - 1].textContent = "Images that use this layer:"
+            contents[contents.length] = document.createElement("br")
+
+            for (let image of data.layers[dat.diff]){
+                contents[contents.length] = document.createElement("div")
+                contents[contents.length - 1].textContent = image.substr(0, 12) + " " + getImageName(data.images[image])
+                contents[contents.length - 1].style.fontFamily = "monospace, monospace"
+            }
+
+            const content = document.createElement("div")
+
+            for (let c of contents){
+                content.appendChild(c)
+            }
+
+            setModalBody(content)
+            openModal()
+        }
+        nameGroup.appendChild(usesElement)
+    }
+
+
+    if ((typeof dat.size != "undefined") && (typeof dat.maxsize != "undefined")){
+        const percentElement = document.createElement("div")
+        percentElement.textContent = parseFloat(used.toFixed(2)) + "%"
+        percentElement.style.textAlign = "right"
+        percentElement.style.flexShrink = "0"
+        mainElement.appendChild(percentElement)
+    }
+
+
+    headerRow.appendChild(mainElement)
+    container.appendChild(headerRow)
+
+    return headerRow
+}
+
+function createFile(dat){
+    let element
+
+    if (dat.children){
+        const dirElement = createEntry({text: dat.text, size: dat.size, maxsize: dat.maxsize})
+        const contentsElement = document.createElement("div")
+
+        function onclick(hide){
+            if (hide) {
+                contentsElement.innerHTML = ""
+            }else{
+                const files = dat.children
+                const files_list = []
+
+                for (const f in files){
+                    if (f == "__dir_size"){
+                        continue
+                    }
+
+                    const content = files[f]
+                    const isFile = typeof content !== "object"
+
+                    files_list.push({
+                        text: f,
+                        size: (typeof content == "number" ? content : (content.__dir_size ?? 0)),
+                        maxsize: dat.maxsize,
+                        children: (!isFile ? content : null),
+                        symlink: (typeof content === "string") ? content : null,
+                        cache: dat.cache,
+                        path: dat.path + "/" + f
+                    })
+                }
+
+                files_list.sort((a, b) => b.size - a.size)
+
+                for (f of files_list){
+                    const el = createFile(f)
+                    contentsElement.appendChild(el)
+                }
+            }
+        }
+
+        element = createToggle(dirElement, contentsElement, onclick)
+    }else{
+        element = createEntry({text: dat.text, size: dat.size, maxsize: dat.maxsize, symlink: dat.symlink, indent: true})
+    }
+
+    element.oncontextmenu = function(e){
+        contextBody.innerHTML = ""
+        addContextEntry("Copy File Location (Host)", setClipboardText, data.datadir + "/" + dat.cache + "/diff" + dat.path)
+        addContextEntry("Copy Path (Container)", setClipboardText, dat.path)
+
+        openContext(e)
+    }
+
+    return element
+}
+
+function createLayer(dat){
+    const layerElement = createEntry({
+        text: "Layer " + dat.num + ": " + dat.diff,
+        size: dat.size,
+        maxsize: dat.maxsize,
+        sameimage: data.images[dat.same_as],
+        os: dat.os,
+        os_release: dat.os_release,
+        diff: dat.diff
+    })
+
+    const filesElement = document.createElement("div")
+
+    function onclick(hide){
+        if (hide) {
+            filesElement.innerHTML = ""
+        }else{
+            const files = data.files[dat.cache]
+            const files_list = []
+
+            for (const f in files){
+                if (f == "__dir_size"){
+                    continue
+                }
+
+                const content = files[f]
+                const isFile = typeof content !== "object"
+
+                files_list.push({
+                    text: f,
+                    size: (isFile ? content : (content.__dir_size ?? 0)),
+                    maxsize: dat.size,  // show file size relative to layer
+                    children: (!isFile ? content : null),
+                    symlink: (typeof content === "string") ? content : null,
+                    cache: dat.cache,
+                    path: "/" + f
+                })
+            }
+
+            files_list.sort((a, b) => b.size - a.size)
+
+            for (f of files_list){
+                const el = createFile(f)
+                filesElement.appendChild(el)
+            }
+        }
+    }
+
+    layerElement.oncontextmenu = function(e){
+        contextBody.innerHTML = ""
+        addContextEntry("Copy File Location", setClipboardText, data.datadir + "/" + dat.cache + "/diff")
+        addContextEntry("Copy Diff", setClipboardText, dat.diff)
+        addContextEntry("Copy Cache", setClipboardText, dat.cache)
+        addContextEntry("Copy Chain", setClipboardText, dat.chain)
+
+        openContext(e)
+    }
+
+
+    return createToggle(layerElement, filesElement, onclick)
+}
+
+function createImage(dat){
+    const imageElement = createEntry({text: getImageName(dat), size: dat.size, maxsize: data.imagesizetotal})
+    const layersElement = document.createElement("div")
+
+    for (const l in dat.layers) {
+        const layer = dat.layers[l]
+        layer.maxsize = dat.size
+        layer.num = l
+
+        const el = createLayer(layer)
+        layersElement.appendChild(el)
+    }
+
+    imageElement.oncontextmenu = function(e){
+        contextBody.innerHTML = ""
+        addContextEntry("Copy ID", setClipboardText, dat.id)
+        addContextEntry("Copy Definition Path", setClipboardText, "/var/lib/docker/image/overlay2/imagedb/content/sha256/" + dat.id)
+        addContextEntry("Show Config", function(){
+            let str = ""
+
+            if (dat.config){
+                str += jsonHighlight(dat.config)
+                str += "<br><br>"
+            }
+
+            if (dat.history){
+                str += "History: <br>"
+                str += jsonHighlight(dat.history)
+            }
+
+            const content = document.createElement("pre")
+            content.style.fontSize = "12pt"
+            content.innerHTML = str
+
+            setModalHeaderText("Config")
+            setModalBody(content)
+            openModal()
+        })
+
+        openContext(e)
+    }
+
+    return createToggle(imageElement, layersElement)
+}
+
+
+const images_sorted = []
+for (const hash in data.images) {
+    const image = data.images[hash]
+
+    images_sorted.push({image: hash, size: image.size})
+}
+
+images_sorted.sort((a, b) => b.size - a.size)
+
+for (const i of images_sorted) {
+    const image = data.images[i.image]
+    image.id = i.image
+
+    const el = createImage(image)
+    document.body.appendChild(el)
+}
+
+
+        </script>
+    </body>
+</html>
